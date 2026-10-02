@@ -1,1 +1,36 @@
 const $=s=>document.querySelector(s);let works=[];const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));async function boot(){const s=await PortfolioData.session();if(s)show()}async function show(){$('#loginGate').hidden=true;$('#adminApp').hidden=false;await load()}function stats(){$('#totalStat').textContent=works.length;$('#pubStat').textContent=works.filter(x=>x.status==='published').length;$('#draftStat').textContent=works.filter(x=>x.status!=='published').length;$('#yearStat').textContent=Math.max(...works.map(x=>x.academic_year||0))||'–';let ys=[...new Set(works.map(x=>x.academic_year).filter(Boolean))].sort((a,b)=>b-a);$('#adminYear').innerHTML='<option value="all">ทุกปี</option>'+ys.map(y=>`<option>${y}</option>`).join('')}function render(){let q=$('#adminSearch').value.trim().toLowerCase(),y=$('#adminYear').value,st=$('#adminStatus').value;let a=works.filter(x=>(y==='all'||String(x.academic_year)===y)&&(st==='all'||x.status===st)&&([x.title,x.category,x.description].join(' ').toLowerCase().includes(q)));$('#resultCount').textContent=a.length+' รายการ';$('#adminList').innerHTML=a.length?a.map(x=>`<article class="admin-item">${x.image_url?`<img src="${esc(x.image_url)}" alt="">`:`<div class="thumb-empty">AS</div>`}<div class="item-copy"><div class="item-meta"><span>${esc(x.academic_year||'')}</span><span>${esc(x.category||'')}</span><span class="status ${esc(x.status)}">${x.status==='published'?'เผยแพร่':x.status==='draft'?'ฉบับร่าง':'ซ่อน'}</span></div><b>${esc(x.title)}</b><p>${esc(x.description||'')}</p><div><button class="mini" onclick="editWork(${x.id})">แก้ไข</button><button class="mini danger" onclick="delWork(${x.id})">ลบ</button></div></div></article>`).join(''):'<div class="empty-state">ไม่พบรายการที่ตรงกับตัวกรอง</div>'}async function load(){works=await PortfolioData.works(false);stats();render()}$('#loginForm').onsubmit=async e=>{e.preventDefault();try{await PortfolioData.login($('#email').value,$('#password').value);show()}catch(x){$('#loginError').textContent=x.message}};$('#logoutBtn').onclick=async()=>{await PortfolioData.logout();location.reload()};$('#workForm').onsubmit=async e=>{e.preventDefault();try{$('#saveMessage').textContent='กำลังบันทึก…';let image_url=$('#imageUrl').value||null;if($('#imageFile').files[0])image_url=await PortfolioData.upload($('#imageFile').files[0]);await PortfolioData.saveWork({id:$('#workId').value?Number($('#workId').value):null,title:$('#title').value,academic_year:Number($('#year').value),category:$('#category').value,event_date:$('#eventDate').value||null,description:$('#description').value,image_url,document_url:$('#linkUrl').value||null,status:$('#status').value});reset();$('#saveMessage').textContent='บันทึกสำเร็จ ✓';await load()}catch(x){$('#saveMessage').textContent='เกิดข้อผิดพลาด: '+x.message}};window.editWork=id=>{let x=works.find(v=>v.id===id);$('#workId').value=x.id;$('#title').value=x.title;$('#year').value=x.academic_year||2569;$('#category').value=x.category||'';$('#eventDate').value=x.event_date||'';$('#description').value=x.description||'';$('#imageUrl').value=x.image_url||'';$('#linkUrl').value=x.document_url||'';$('#status').value=x.status||'published';$('#formTitle').textContent='แก้ไขผลงาน';$('#editBadge').hidden=false;preview(x.image_url);scrollTo({top:0,behavior:'smooth'})};window.delWork=async id=>{if(confirm('ยืนยันการลบรายการนี้? การดำเนินการนี้ย้อนกลับไม่ได้')){await PortfolioData.deleteWork(id);load()}};function reset(){$('#workForm').reset();$('#workId').value='';$('#year').value=2569;$('#formTitle').textContent='เพิ่มผลงานใหม่';$('#editBadge').hidden=true;$('#imagePreview').hidden=true}$('#cancelEdit').onclick=reset;['adminSearch','adminYear','adminStatus'].forEach(id=>$('#'+id).addEventListener(id==='adminSearch'?'input':'change',render));function preview(src){let p=$('#imagePreview');if(src){p.innerHTML=`<img src="${src}" alt="preview">`;p.hidden=false}else p.hidden=true}$('#imageFile').onchange=e=>{let f=e.target.files[0];if(f)preview(URL.createObjectURL(f))};$('#imageUrl').oninput=e=>preview(e.target.value);boot();
+async function collectBulkFiles(inputFiles){
+ const out=[];
+ for(const f of inputFiles){
+  if(/\.zip$/i.test(f.name)){
+   if(!window.JSZip)throw new Error('โหลดตัวอ่าน ZIP ไม่สำเร็จ กรุณารีเฟรชหน้า');
+   const zip=await JSZip.loadAsync(f);
+   const entries=Object.values(zip.files).filter(e=>!e.dir&&/\.(jpe?g|png|webp)$/i.test(e.name)&&!e.name.includes('__MACOSX')&&(/06_Upload_Ready\//.test(e.name)||!Object.keys(zip.files).some(x=>/06_Upload_Ready\//.test(x))));
+   for(const e of entries){
+    const blob=await e.async('blob'),name=e.name.split('/').pop(),ext=(name.split('.').pop()||'jpg').toLowerCase(),type=ext==='png'?'image/png':ext==='webp'?'image/webp':'image/jpeg';
+    out.push(new File([blob],name,{type}));
+   }
+  }else if(/^image\//.test(f.type))out.push(f);
+ }
+ return out;
+}
+function bulkTitle(name){return name.replace(/\.[^.]+$/,'').replace(/[-_]+/g,' ').replace(/\bcanva\b/ig,'Canva').trim()}
+$('#bulkUploadBtn').onclick=async()=>{
+ const btn=$('#bulkUploadBtn'),msg=$('#bulkMessage'),box=$('#bulkProgress'),bar=$('#bulkBar');
+ try{
+  const selected=[...$('#bulkFiles').files];if(!selected.length)throw new Error('กรุณาเลือก ZIP หรือรูปภาพก่อน');
+  btn.disabled=true;msg.textContent='กำลังอ่าน Media Pack…';box.hidden=false;bar.style.width='2%';
+  const files=await collectBulkFiles(selected);if(!files.length)throw new Error('ไม่พบ JPG / PNG / WEBP ในไฟล์ที่เลือก');
+  const year=Number($('#bulkYear').value)||2568,cat=$('#bulkCategory').value;let ok=0,fail=0;
+  for(let i=0;i<files.length;i++){
+   const file=files[i];msg.textContent=`กำลังอัปโหลด ${i+1}/${files.length}: ${file.name}`;
+   try{
+    const url=await PortfolioData.upload(file,`bulk/${year}`);
+    await PortfolioData.addMediaWork({title:bulkTitle(file.name),academic_year:year,category:cat,description:'ภาพหลักฐานจาก Canva Portfolio • นำเข้าผ่าน Bulk Upload',image_url:url});ok++;
+   }catch(err){console.error(file.name,err);fail++}
+   bar.style.width=Math.round((i+1)/files.length*100)+'%';
+  }
+  msg.textContent=`เสร็จแล้ว ✓ อัปโหลดสำเร็จ ${ok} ไฟล์${fail?' • ไม่สำเร็จ '+fail+' ไฟล์':''}`;await load();
+ }catch(err){msg.textContent='เกิดข้อผิดพลาด: '+err.message}
+ finally{btn.disabled=false}
+};
