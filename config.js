@@ -1,0 +1,1 @@
+window.PORTFOLIO_CONFIG = {supabaseUrl:'https://clqwxyvhqmcwvydnpqjs.supabase.co',supabaseAnonKey:'sb_publishable_9ZNzCfj6L2bWeGlS6FoXPg_7c_mODnH',mediaBucket:'portfolio-media'};
